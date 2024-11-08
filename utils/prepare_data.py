@@ -21,7 +21,6 @@ def create_ply_file(bin_path):
     ply_data.write('sparse_pc.ply')
 
 def create_transforms(bin_path):
-    reconstruction = pycolmap.Reconstruction(bin_path)
     images = read_images_binary(os.path.join(bin_path, 'images.bin'))
 
     # Define JSON structure
@@ -51,21 +50,22 @@ def create_transforms(bin_path):
         json.dump(transforms_data, f, indent=4)
 
 def create_base_cam(bin_path):
-    reconstruction = pycolmap.Reconstruction(bin_path)
-    camera = next(iter(reconstruction.cameras.values()))  # Assuming one camera
+    camera = read_cameras_binary(os.path.join(bin_path, 'cameras.bin'))
+    #camera = next(cameras.values())  # Assuming one camera
+    camera_list = list(camera.values())
 
     # Create JSON for base_cam
     base_cam_data = {
-        "width": camera.width,
-        "height": camera.height,
-        "fl_x": camera.fx,       # Focal length in x-direction
-        "fl_y": camera.fy,       # Focal length in y-direction
-        "cx": camera.cx,         # Principal point in x
-        "cy": camera.cy,         # Principal point in y
-        "k1": camera.k1,         # Radial distortion coefficient
-        "k2": camera.k2,         # Radial distortion coefficient
-        "p1": camera.p1,         # Tangential distortion coefficient
-        "p2": camera.p2          # Tangential distortion coefficient
+        "width": camera_list[0].width,
+        "height": camera_list[0].height,
+        "fl_x": camera_list[0].fx,       # Focal length in x-direction
+        "fl_y": camera_list[0].fy,       # Focal length in y-direction
+        "cx": camera_list[0].cx,         # Principal point in x
+        "cy": camera_list[0].cy,         # Principal point in y
+        "k1": camera_list[0].k1,         # Radial distortion coefficient
+        "k2": camera_list[0].k2,         # Radial distortion coefficient
+        "p1": camera_list[0].p1,         # Tangential distortion coefficient
+        "p2": camera_list[0].p2          # Tangential distortion coefficient
     }
 
     # Save to base_cam.json
@@ -74,4 +74,4 @@ def create_base_cam(bin_path):
 
 if __name__ == '__main__':
     bin_path = 'data/alameda/colmap/sparse/0'
-    create_ply_file(bin_path)
+    create_base_cam(bin_path)
