@@ -9,11 +9,12 @@ import numpy as np
 import pandas as pd
 import pycolmap
 import tqdm
+import json
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
-IMAGES_PATH = "../data/alameda/images"
-COLMAP_PATH = "../data/alameda/colmap/sparse/0"
+IMAGES_PATH = "data/alameda/images"
+COLMAP_PATH = "data/alameda/colmap/sparse/0"
 
 # Define the density threshold
 density_threshold = 0.00000001
@@ -398,6 +399,35 @@ def save_cluster_images(clusters, images, output_path):
     cv2.imwrite(output_path, combined_img)
     logging.info(f"Combined cluster images saved to {output_path}")
 
+def numpy_to_python(obj):
+    """
+    Convert numpy types to native Python types for JSON serialization.
+    
+    Args:
+        obj: Object to convert
+        
+    Returns:
+        Object with numpy types converted to Python native types
+    """
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (dict, list)):
+        return _convert_container(obj)
+    return obj
+
+def _convert_container(container):
+    """Helper function to convert numpy types within containers"""
+    if isinstance(container, dict):
+        return {numpy_to_python(key): numpy_to_python(value) 
+                for key, value in container.items()}
+    elif isinstance(container, list):
+        return [numpy_to_python(item) for item in container]
+    return container
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
@@ -476,7 +506,7 @@ if __name__ == '__main__':
             futures = {executor.submit(process_image, image_data): image_data['image_id'] for image_data in image_data_list}
 
             # Collect results as they complete
-            for future in tqdm.tqdm(as_completed(futures), total=len(futures)):
+            for future in tqdm(as_completed(futures), total=len(futures)):
                 image_id = futures[future]
                 try:
                     result = future.result()
@@ -513,7 +543,12 @@ if __name__ == '__main__':
 
     logging.info(f"Computed {len(clusters)} clusters.")
 
-    # Save the cluster images
+    
+    # Save clusters to JSON for readability:
+    with open("alameda_clusters.json", "w") as f:
+        json.dump(numpy_to_python(clusters), f, indent=4)
+
+    '''# Save the cluster images
     output_path = "alameda_cluster_images.png"
     save_cluster_images(clusters, ims, output_path)
-    logging.info(f"Cluster images saved to {output_path}")
+    logging.info(f"Cluster images saved to {output_path}")'''
