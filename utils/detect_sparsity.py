@@ -1,3 +1,4 @@
+import argparse
 import logging
 import multiprocessing
 import os
@@ -9,15 +10,8 @@ import numpy as np
 import pandas as pd
 import pycolmap
 import tqdm
-import json
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
-
-IMAGES_PATH = "data/alameda/images"
-COLMAP_PATH = "data/alameda/colmap/sparse/0"
-
-# Define the density threshold
-density_threshold = 0.00000001
 
 
 def init_worker(global_data):
@@ -45,6 +39,7 @@ def project_to_img(image_data):
         use_track = image_data['use_track']
         use_color = image_data['use_color']
         color_tolerance = image_data['color_tolerance']
+        images_path = image_data['images_path']
 
         # Extract R and T from cam_from_world
         extrinsic_matrix = cam_from_world
@@ -55,7 +50,7 @@ def project_to_img(image_data):
         projected_points2D = cv2.projectPoints(points3D, R_vec, T, K, None)[0].reshape(-1, 2)
 
         # Load image
-        img_path = os.path.join(IMAGES_PATH, image_name)
+        img_path = os.path.join(images_path, image_name)
         img = cv2.imread(img_path, cv2.IMREAD_COLOR)
         if img is None:
             raise FileNotFoundError(f"Image {image_name} not found at {img_path}.")
@@ -166,12 +161,24 @@ def process_image(image_data):
         points2D = result['points2D']
         height = result['height']
         width = result['width']
+        density_threshold = image_data['density_threshold']
 
         # Generate the density map for the projected points
         smoothed_density_map = density_map(points2D, (height, width), sigma=10)
 
         # Calculate the fraction of the image area with density above the threshold
         high_density_area = np.sum(smoothed_density_map > density_threshold)
+
+        # Export the density map as a mask
+        if 'mask_path' in image_data:
+            mask_prefix = image_data['mask_path']
+            # If the folder does not exist, create it
+            os.makedirs(mask_prefix, exist_ok=True)
+            mask_path = f"{mask_prefix}/{image_data['image_name']}"
+            # Areas with high density get masked out
+            cv2.imwrite(mask_path, (smoothed_density_map < density_threshold).astype(np.uint8) * 255)
+            logging.debug(f"Saved mask to {mask_path}")
+
         total_area = height * width
         fraction_high_density = high_density_area / total_area
 
@@ -236,7 +243,7 @@ def compute_overlap_matrix(images):
             tasks.append((i, j, points3D_per_image[i], points3D_per_image[j]))
 
     # Use ProcessPoolExecutor to parallelize the computation
-    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count() - 2) as executor:
         futures = {executor.submit(compute_overlap, task): task[:2] for task in tasks}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Computing overlaps"):
             i, j, overlap = future.result()
@@ -298,7 +305,7 @@ def save_cluster_plot(cluster_labels, output_path):
     plt.savefig(output_path)
     plt.close()
 
-def save_cluster_images(clusters, images, output_path):
+def save_cluster_images(clusters, images, output_path, images_path):
     """
     Saves a single image containing grids of images for all clusters.
 
@@ -306,6 +313,7 @@ def save_cluster_images(clusters, images, output_path):
         clusters (dict): Clusters with cluster labels as keys and lists of image IDs as values.
         images (list): List of image objects.
         output_path (str): File path to save the combined image.
+        images_path (str): Path to the images directory.
     """
     import cv2
     import numpy as np
@@ -329,7 +337,7 @@ def save_cluster_images(clusters, images, output_path):
         for image_id in cluster_image_ids:
             image = image_id_to_image.get(image_id)
             if image is not None:
-                image_path = os.path.join(IMAGES_PATH, image.name)
+                image_path = os.path.join(images_path, image.name)
                 img = cv2.imread(image_path)
                 if img is not None:
                     cluster_images.append(img)
@@ -399,39 +407,180 @@ def save_cluster_images(clusters, images, output_path):
     cv2.imwrite(output_path, combined_img)
     logging.info(f"Combined cluster images saved to {output_path}")
 
-def numpy_to_python(obj):
-    """
-    Convert numpy types to native Python types for JSON serialization.
-    
-    Args:
-        obj: Object to convert
-        
-    Returns:
-        Object with numpy types converted to Python native types
-    """
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, (dict, list)):
-        return _convert_container(obj)
-    return obj
 
-def _convert_container(container):
-    """Helper function to convert numpy types within containers"""
-    if isinstance(container, dict):
-        return {numpy_to_python(key): numpy_to_python(value) 
-                for key, value in container.items()}
-    elif isinstance(container, list):
-        return [numpy_to_python(item) for item in container]
-    return container
+def save_projected_images_by_cluster(clusters, images, image_data_list, points3D, model_colors, point_ids, tracks, K, tracks_for_image, output_dir):
+    """
+    Saves images of each cluster in a separate folder with red dots marking the projected and filtered points.
+
+    Args:
+        clusters (dict): Clusters with cluster labels as keys and lists of image IDs as values.
+        images (list): List of image objects.
+        image_data_list (list): List of dictionaries containing per-image data.
+        points3D (np.ndarray): Array of 3D points.
+        model_colors (np.ndarray): Array of colors for each 3D point.
+        point_ids (np.ndarray): Array of point IDs.
+        tracks (dict): Mapping from point IDs to sets of image IDs.
+        K (np.ndarray): Camera intrinsic matrix.
+        tracks_for_image (dict): Mapping from image IDs to sets of point IDs visible in that image.
+        output_dir (str): Base directory to save the images.
+    """
+    import os
+    import cv2
+
+    # Create a mapping from image_id to image_data
+    image_data_dict = {data['image_id']: data for data in image_data_list}
+
+    # Iterate over clusters
+    for cluster_id, cluster_image_ids in clusters.items():
+        if cluster_id == -1:
+            cluster_name = "Noise"
+        else:
+            cluster_name = f"Cluster_{cluster_id}"
+
+        # Create directory for the cluster
+        cluster_dir = os.path.join(output_dir, cluster_name)
+        os.makedirs(cluster_dir, exist_ok=True)
+
+        # Process images in the cluster
+        for image_id in cluster_image_ids:
+            image_data = image_data_dict.get(image_id)
+            if image_data is None:
+                logging.warning(f"Image data for image ID {image_id} not found.")
+                continue
+
+            # Load the image
+            image_name = image_data['image_name']
+            images_path = image_data['images_path']
+            img_path = os.path.join(images_path, image_name)
+            img = cv2.imread(img_path)
+            if img is None:
+                logging.warning(f"Image {image_name} not found at {img_path}")
+                continue
+
+            # Project and filter points
+            result = project_to_img_local(image_data, points3D, model_colors, point_ids, tracks, K, tracks_for_image)
+            if result is None:
+                logging.warning(f"No projected points for image {image_name}")
+                continue
+
+            points2D = result['points2D']
+
+            # Overlay the projected points on the image
+            for point in points2D:
+                x, y = int(point[0]), int(point[1])
+                cv2.circle(img, (x, y), radius=5, color=(0, 0, 255), thickness=-1)  # Red dots
+
+            # Save the image
+            output_image_path = os.path.join(cluster_dir, image_name)
+            cv2.imwrite(output_image_path, img)
+            logging.info(f"Saved projected image to {output_image_path}")
+
+def project_to_img_local(image_data, points3D, model_colors, point_ids, tracks, K, tracks_for_image):
+    """
+    Projects 3D points onto a 2D image plane using pre-extracted data.
+
+    Args:
+        image_data (dict): A dictionary containing all necessary data for the image.
+        points3D (np.ndarray): Array of 3D points.
+        model_colors (np.ndarray): Array of colors for each 3D point.
+        point_ids (np.ndarray): Array of point IDs.
+        tracks (dict): Mapping from point IDs to sets of image IDs.
+        K (np.ndarray): Camera intrinsic matrix.
+        tracks_for_image (dict): Mapping from image IDs to sets of point IDs visible in that image.
+
+    Returns:
+        dict: Contains filtered 2D projected points and image dimensions.
+    """
+    try:
+        image_id = image_data['image_id']
+        image_name = image_data['image_name']
+        cam_from_world = image_data['cam_from_world']
+        use_track = image_data['use_track']
+        use_color = image_data['use_color']
+        color_tolerance = image_data['color_tolerance']
+        images_path = image_data['images_path']
+
+        # Extract R and T from cam_from_world
+        extrinsic_matrix = cam_from_world
+        R, T = extrinsic_matrix[:, :3], extrinsic_matrix[:, 3]
+        R_vec = cv2.Rodrigues(R)[0]  # Convert rotation matrix to vector
+
+        # Project 3D points to the 2D image plane
+        projected_points2D = cv2.projectPoints(points3D, R_vec, T, K, None)[0].reshape(-1, 2)
+
+        # Load image to get dimensions
+        img_path = os.path.join(images_path, image_name)
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        if img is None:
+            raise FileNotFoundError(f"Image {image_name} not found at {img_path}.")
+        height, width = img.shape[:2]
+
+        # Filter points within image bounds
+        x = projected_points2D[:, 0]
+        y = projected_points2D[:, 1]
+        in_bounds_mask = (x >= 0) & (x < width) & (y >= 0) & (y < height)
+
+        if not np.any(in_bounds_mask):
+            return None  # No points to process
+
+        points2D_in_bounds = projected_points2D[in_bounds_mask]
+        model_colors_in_bounds = model_colors[in_bounds_mask]
+        point_ids_in_bounds = point_ids[in_bounds_mask]
+
+        # Initialize valid_mask
+        num_points = len(points2D_in_bounds)
+
+        if use_color:
+            # Extract pixel colors from the image
+            coords = points2D_in_bounds.astype(int)
+            projected_colors = img[coords[:, 1], coords[:, 0]] / 255.0
+
+            # Compute color differences
+            color_diff = np.linalg.norm(projected_colors - model_colors_in_bounds, axis=1)
+            color_mask = color_diff <= color_tolerance
+        else:
+            color_mask = np.zeros(num_points, dtype=bool)
+
+        if use_track:
+            # Track membership check
+            visible_point_ids = tracks_for_image[image_id]
+            track_mask = np.in1d(point_ids_in_bounds, list(visible_point_ids), assume_unique=True)
+        else:
+            track_mask = np.zeros(num_points, dtype=bool)
+
+        # Combine masks
+        valid_mask = color_mask | track_mask
+
+        # Return filtered points
+        filtered_points2D = points2D_in_bounds[valid_mask]
+        return {
+            'image_id': image_id,
+            'points2D': filtered_points2D,
+            'height': height,
+            'width': width
+        }
+    except Exception as e:
+        print(f"Error processing image {image_name}: {e}")
+        return None
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Detect sparsity in images using COLMAP reconstruction.")
+    parser.add_argument("--images_path", type=str, default="../data/alameda/images",
+                        help="Path to the images directory.")
+    parser.add_argument("--colmap_path", type=str, default="../data/alameda/colmap/sparse/0",
+                        help="Path to the COLMAP model directory.")
+    parser.add_argument("--density_threshold", type=float, default=0.00000001,
+                        help="Density threshold for high-density area detection.")
+    parser.add_argument("--mask_path", type=str, default=None,
+                        help="Path to save the high-density area mask for each image.")
+    parser.add_argument("--recompute", action="store_true",
+                        help="Recompute density statistics even if a CSV file exists.")
+
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
-    reconstruction = pycolmap.Reconstruction(COLMAP_PATH)
+    reconstruction = pycolmap.Reconstruction(args.colmap_path)
     print(reconstruction.summary())
 
     # Ensure that reconstruction is properly initialized
@@ -482,14 +631,17 @@ if __name__ == '__main__':
             'image_id': image_id,
             'image_name': image_name,
             'cam_from_world': cam_from_world,
-            'use_track': True,  # Set your flags as needed
+            'use_track': True,
             'use_color': True,
-            'color_tolerance': 0.05
+            'color_tolerance': 0.1,
+            'images_path': args.images_path,
+            'density_threshold': args.density_threshold,
+            'mask_path': args.mask_path if args.mask_path is not None else None
         }
         image_data_list.append(image_data)
     logging.info(f"Extracted {len(image_data_list)} images.")
 
-    if not os.path.exists("alameda_density_results.csv"):
+    if not os.path.exists("alameda_density_results.csv") or args.recompute:
         logging.info("Processing images to compute density statistics")
         # Package the global data into a tuple
         global_data = (points3D, model_colors, point_ids, tracks, K, tracks_for_image)
@@ -497,7 +649,7 @@ if __name__ == '__main__':
         # Prepare a list to store results
         results = []
 
-        num_processes = multiprocessing.cpu_count()
+        num_processes = multiprocessing.cpu_count() - 2
         logging.info(f"Using {num_processes} worker processes")
 
         # Use ProcessPoolExecutor with initializer
@@ -543,12 +695,27 @@ if __name__ == '__main__':
 
     logging.info(f"Computed {len(clusters)} clusters.")
 
-    
-    # Save clusters to JSON for readability:
-    with open("alameda_clusters.json", "w") as f:
-        json.dump(numpy_to_python(clusters), f, indent=4)
-
-    '''# Save the cluster images
+    # Save the cluster images
     output_path = "alameda_cluster_images.png"
-    save_cluster_images(clusters, ims, output_path)
-    logging.info(f"Cluster images saved to {output_path}")'''
+    save_cluster_images(clusters, ims, output_path, images_path=args.images_path)
+    logging.info(f"Cluster images saved to {output_path}")
+
+    # Prepare image_data_list for the images in 'ims'
+    ims_image_ids = [image.image_id for image in ims]
+    image_data_list_filtered = [image_data for image_data in image_data_list if image_data['image_id'] in ims_image_ids]
+
+    # Save images with projected points for each cluster
+    output_dir = "clusters_with_projections"
+    save_projected_images_by_cluster(
+        clusters,
+        ims,
+        image_data_list_filtered,
+        points3D,
+        model_colors,
+        point_ids,
+        tracks,
+        K,
+        tracks_for_image,
+        output_dir
+    )
+    logging.info(f"Cluster images with projected points saved to {output_dir}")
