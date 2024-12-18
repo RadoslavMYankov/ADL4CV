@@ -68,6 +68,11 @@ def create_transforms(bin_path):
         }
         transforms_data["frames"].append(frame)
 
+    applied_transform = np.eye(4)[:3, :]
+    applied_transform = applied_transform[np.array([0, 2, 1]), :]
+    applied_transform[2, :] *= -1
+    transforms_data["applied_transform"] = applied_transform.tolist()
+
     # Save to transforms.json
     with open('transforms.json', 'w') as f:
         json.dump(transforms_data, f, indent=4)
