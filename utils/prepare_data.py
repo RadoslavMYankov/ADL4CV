@@ -1,3 +1,4 @@
+import argparse
 import pycolmap
 import numpy as np
 from plyfile import PlyData, PlyElement
@@ -12,15 +13,34 @@ def create_ply_file(bin_path):
     reconstruction = pycolmap.Reconstruction(bin_path)
     points3D = reconstruction.points3D
 
-    # Prepare data for .ply file
-    vertices = np.array([
-        (point.xyz[0], point.xyz[1], point.xyz[2], point.color[0], point.color[1], point.color[2])
-        for point in points3D.values()
-    ], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+    applied_transform = np.eye(4)[:3, :]
+    applied_transform = applied_transform[np.array([0, 2, 1]), :]
+    applied_transform[2, :] *= -1
+    
+    points = np.array([[p.xyz[0], p.xyz[1], p.xyz[2]] for p in points3D.values()], dtype=np.float32)
+    points = np.einsum('ij,bj->bi', applied_transform[:3, :3], points) + applied_transform[:3, 3]
 
-    # Write to .ply
-    ply_data = PlyData([PlyElement.describe(vertices, 'vertex')], text=True)
-    ply_data.write('sparse_pc.ply')
+    points_rgb = np.array([p.color for p in points3D.values()], dtype=np.uint8)
+
+    with open("sparse_pc.ply", "w") as f:
+        # Header
+        f.write("ply\n")
+        f.write("format ascii 1.0\n")
+        f.write(f"element vertex {len(points3D)}\n")
+        f.write("property float x\n")
+        f.write("property float y\n")
+        f.write("property float z\n")
+        f.write("property uint8 red\n")
+        f.write("property uint8 green\n")
+        f.write("property uint8 blue\n")
+        f.write("end_header\n")
+
+        for coord, color in zip(points, points_rgb):
+            x, y, z = coord[0], coord[1], coord[2]
+            r, g, b = color[0], color[1], color[2]
+            f.write(f"{x:8f} {y:8f} {z:8f} {r} {g} {b}\n")
+    print("Sparse point cloud saved to sparse_pc.ply")
+
 
 def create_transforms(bin_path):
     images = read_images_binary(os.path.join(bin_path, 'images.bin'))
@@ -77,6 +97,7 @@ def create_transforms(bin_path):
     # Save to transforms.json
     with open('transforms.json', 'w') as f:
         json.dump(transforms_data, f, indent=4)
+    print("Transforms saved to transforms.json")
 
 def create_base_cam(bin_path):
     # not implemented yet do not use
