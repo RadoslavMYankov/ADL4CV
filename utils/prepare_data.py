@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from nerfstudio.data.utils.colmap_parsing_utils import qvec2rotmat, read_cameras_binary, read_images_binary, read_points3D_binary
+from nerfstudio.process_data import colmap_utils    
 
 
 def create_ply_file(bin_path):
@@ -103,8 +104,11 @@ def create_base_cam(bin_path):
         json.dump(base_cam_data, f, indent=4)
 
 if __name__ == '__main__':
-    bin_path = 'data/alameda/colmap/sparse/0'
+    bin_path = Path('data/alameda/colmap/sparse/0')
+    output_path = Path('sanity_check')
 
-    create_ply_file(bin_path)
-    create_transforms(bin_path)
+    colmap_utils.colmap_to_json(bin_path, output_path)
+
+    #create_ply_file(bin_path)
+    #create_transforms(bin_path)
     #create_base_cam(bin_path)
