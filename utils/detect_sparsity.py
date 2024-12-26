@@ -621,7 +621,7 @@ if __name__ == '__main__':
                         help="Recompute density statistics even if a CSV file exists.")
     parser.add_argument("--clustering_method", type=str, default="poses",
                         help="Clustering method: 'shared_points' or 'poses'")
-    parser.add_argument("--eps", type=float, default=1.0,
+    parser.add_argument("--eps", type=float, default=0.5,
                         help="DBSCAN epsilon parameter.")
     parser.add_argument("--min_samples", type=int, default=10,
                         help="DBSCAN min_samples parameter.")
@@ -629,6 +629,8 @@ if __name__ == '__main__':
                         help="Cluster 'all'/'sparse' images")
     parser.add_argument("--cluster-output", type=str, default="clusters.csv",
                         help="Path to save the cluster IDs.")
+    parser.add_argument("--sparsity-threshold", type=float, default=0.15,
+                        help="Threshold for detecting sparse images.")
     # parser.add_argument("--n-clusters", type=int, default=5,
     #                     help="Number of clusters to generate.")
     args = parser.parse_args()
@@ -739,10 +741,11 @@ if __name__ == '__main__':
 
     logging.info(f"Start clustering {args.cluster_images} images based on {args.clustering_method}")
 
+    # Obtain the images with the lowest density
+    lowest_density_images = df[df["fraction_high_density_area"] < args.sparsity_threshold]["image_id"]
+    logging.info(f"Detected {len(lowest_density_images)} images with a density below {args.sparsity_threshold}")
+
     if args.cluster_images == "sparse":
-        # Obtain the images with the lowest density
-        num_images = 80
-        lowest_density_images = df.nsmallest(num_images, "fraction_high_density_area")["image_id"].values
         ims = [reconstruction.images[image_id] for image_id in lowest_density_images]
     elif args.cluster_images == "all":
         ims = list(reconstruction.images.values())
@@ -789,3 +792,11 @@ if __name__ == '__main__':
             output_dir
         )
         logging.info(f"Cluster images with projected points saved to {output_dir}")
+    elif args.cluster_images == "all":
+        # Detect which clusters contain the most sparse images
+        sparse_clusters = []
+        for cluster_id, image_ids in clusters.items():
+            num_sparse_images = len(set(image_ids).intersection(lowest_density_images))
+            sparse_clusters.append((cluster_id, num_sparse_images, len(image_ids)))
+        sparse_clusters.sort(key=lambda x: x[1], reverse=True)
+        logging.info(f"Number of sparse and total images per cluster: {sparse_clusters}")
