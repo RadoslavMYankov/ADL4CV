@@ -217,38 +217,49 @@ def compute_overlap(task):
     return (i, j, overlap)
 
 
-def compute_overlap_matrix(images):
+def compute_overlap_matrix(images, method="poses"):
     """
-    Computes the overlap matrix for a list of images based on shared 3D points.
+    Computes the overlap matrix for a list of images based on shared 3D points or camera poses.
 
     Args:
         images (list): List of image objects.
-
+        method (str): Method to compute overlap: "shared_points" or "poses".
+        t_weight (float): Weight for translation distance.
+        q_weight (float): Weight for quaternion distance
     Returns:
         np.ndarray: Overlap matrix.
     """
+    if method not in ("shared_points", "poses"):
+        raise ValueError(f"Invalid method: {method}")
+
     num_images = len(images)
     overlap_matrix = np.zeros((num_images, num_images), dtype=np.float32)
 
-    # Extract points3D IDs for each image
-    points3D_per_image = []
-    for image in images:
-        point3D_ids = set(point2D.point3D_id for point2D in image.get_valid_points2D())
-        points3D_per_image.append(point3D_ids)
+    if method == "shared_points":
+        # Extract points3D IDs for each image
+        points3D_per_image = []
+        for image in images:
+            point3D_ids = set(point2D.point3D_id for point2D in image.get_valid_points2D())
+            points3D_per_image.append(point3D_ids)
 
-    # Prepare tasks for parallel computation
-    tasks = []
-    for i in range(num_images):
-        for j in range(i + 1, num_images):
-            tasks.append((i, j, points3D_per_image[i], points3D_per_image[j]))
+        # Prepare tasks for parallel computation
+        tasks = []
+        for i in range(num_images):
+            for j in range(i + 1, num_images):
+                tasks.append((i, j, points3D_per_image[i], points3D_per_image[j]))
 
-    # Use ProcessPoolExecutor to parallelize the computation
-    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count() - 2) as executor:
-        futures = {executor.submit(compute_overlap, task): task[:2] for task in tasks}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Computing overlaps"):
-            i, j, overlap = future.result()
-            overlap_matrix[i, j] = overlap_matrix[j, i] = overlap
+        # Use ProcessPoolExecutor to parallelize the computation
+        with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count() - 2) as executor:
+            futures = {executor.submit(compute_overlap, task): task[:2] for task in tasks}
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Computing shared points overlaps"):
+                i, j, overlap = future.result()
+                overlap_matrix[i, j] = overlap_matrix[j, i] = overlap
+    elif method == "poses":
+        # Compute pose overlap matrix
+        pose_distances = compute_pose_overlap(images)
 
+        # Invert the distances to get overlap scores
+        overlap_matrix = 1 - pose_distances
     return overlap_matrix
 
 
@@ -285,6 +296,38 @@ def cluster_images(overlap_matrix, images, eps=0.5, min_samples=2):
         clusters[cluster_id] = image_ids[indices].tolist()
 
     return clusters, cluster_labels
+
+
+def compute_pose_overlap(images, rotation_weight=0.1, max_rotation_distance=0.5, rotation_penalty=10.):
+    """
+    Compute pose overlap between images based on translation and quaternion distances.
+
+    Args:
+        images (list): List of image objects.
+        t_weight (float): Weight for translation distance.
+        q_weight (float): Weight for quaternion distance.
+        eps (float): DBSCAN eps parameter.
+        min_samples (int): DBSCAN min_samples parameter.
+
+    Returns:
+        np.ndarray: Overlap matrix based on pose distances.
+    """
+    images_with_poses = [image for image in images if hasattr(image, "cam_from_world")]
+    translations = np.array([image.cam_from_world.translation for image in images_with_poses])
+    rotations = np.array([image.cam_from_world.rotation.quat for image in images_with_poses])
+
+    # Normalize quaternion vectors
+    rotations = rotations / np.linalg.norm(rotations, axis=1, keepdims=True)
+
+    # Compute distances
+    # Euclidean distance for translations
+    t_distances = np.linalg.norm(translations[:, np.newaxis] - translations, axis=-1)
+    # Angular distance for quaternions
+    q_distances = 2 * np.arccos(np.clip(np.abs(np.sum(rotations[:, np.newaxis] * rotations, axis=-1)), 0, 1))
+
+    # Add a penalty for large rotation distances
+    distances = t_distances + np.where(q_distances > max_rotation_distance, rotation_penalty, rotation_weight * q_distances)
+    return distances
 
 
 def save_cluster_plot(cluster_labels, output_path):
@@ -576,8 +619,24 @@ if __name__ == '__main__':
                         help="Path to save the high-density area mask for each image.")
     parser.add_argument("--recompute", action="store_true",
                         help="Recompute density statistics even if a CSV file exists.")
-
+    parser.add_argument("--clustering_method", type=str, default="poses",
+                        help="Clustering method: 'shared_points' or 'poses'")
+    parser.add_argument("--eps", type=float, default=1.0,
+                        help="DBSCAN epsilon parameter.")
+    parser.add_argument("--min_samples", type=int, default=10,
+                        help="DBSCAN min_samples parameter.")
+    parser.add_argument("--cluster-images", type=str, default="all",
+                        help="Cluster 'all'/'sparse' images")
+    parser.add_argument("--cluster-output", type=str, default="clusters.csv",
+                        help="Path to save the cluster IDs.")
+    # parser.add_argument("--n-clusters", type=int, default=5,
+    #                     help="Number of clusters to generate.")
     args = parser.parse_args()
+
+    if args.clustering_method not in ("shared_points", "poses"):
+        raise ValueError(f"Invalid clustering method: {args.clustering_method}")
+    if args.cluster_images not in ("all", "sparse"):
+        raise ValueError(f"Invalid cluster images option: {args.cluster_images}")
 
     logging.basicConfig(level=logging.INFO)
     reconstruction = pycolmap.Reconstruction(args.colmap_path)
@@ -678,44 +737,55 @@ if __name__ == '__main__':
         logging.info("Loading precomputed density statistics")
         df = pd.read_csv("alameda_density_results.csv")
 
-    logging.info("Start clustering sparse images based on density")
-    # Obtain the images with the lowest density
-    num_images = 80
-    lowest_density_images = df.nsmallest(num_images, "fraction_high_density_area")["image_id"].values
-    ims = [reconstruction.images[image_id] for image_id in lowest_density_images]
+    logging.info(f"Start clustering {args.cluster_images} images based on {args.clustering_method}")
+
+    if args.cluster_images == "sparse":
+        # Obtain the images with the lowest density
+        num_images = 80
+        lowest_density_images = df.nsmallest(num_images, "fraction_high_density_area")["image_id"].values
+        ims = [reconstruction.images[image_id] for image_id in lowest_density_images]
+    elif args.cluster_images == "all":
+        ims = list(reconstruction.images.values())
 
     # Compute the overlap matrix
     logging.info("Computing overlap matrix...")
-    overlap_matrix = compute_overlap_matrix(ims)
+    overlap_matrix = compute_overlap_matrix(ims, method=args.clustering_method)
 
     # Cluster parameters
-    eps = 0.75
-    min_samples = 2
+    eps = args.eps
+    min_samples = args.min_samples
     clusters, cluster_labels = cluster_images(overlap_matrix, ims, eps=eps, min_samples=min_samples)
 
+    # Save the cluster IDs to a CSV file
+    cluster_df = pd.DataFrame({
+        "image_id": [image.image_id for image in ims],
+        "cluster_id": cluster_labels
+    })
+    cluster_df.to_csv(args.cluster_output, index=False)
     logging.info(f"Computed {len(clusters)} clusters.")
 
-    # Save the cluster images
-    output_path = "alameda_cluster_images.png"
-    save_cluster_images(clusters, ims, output_path, images_path=args.images_path)
-    logging.info(f"Cluster images saved to {output_path}")
+    if args.cluster_images == "sparse":
+        # Save the cluster images
+        output_path = "alameda_cluster_images.png"
+        save_cluster_images(clusters, ims, output_path, images_path=args.images_path)
+        logging.info(f"Cluster images saved to {output_path}")
 
-    # Prepare image_data_list for the images in 'ims'
-    ims_image_ids = [image.image_id for image in ims]
-    image_data_list_filtered = [image_data for image_data in image_data_list if image_data['image_id'] in ims_image_ids]
+        # Prepare image_data_list for the images in 'ims'
+        ims_image_ids = [image.image_id for image in ims]
+        image_data_list_filtered = [image_data for image_data in image_data_list if image_data['image_id'] in ims_image_ids]
 
-    # Save images with projected points for each cluster
-    output_dir = "clusters_with_projections"
-    save_projected_images_by_cluster(
-        clusters,
-        ims,
-        image_data_list_filtered,
-        points3D,
-        model_colors,
-        point_ids,
-        tracks,
-        K,
-        tracks_for_image,
-        output_dir
-    )
-    logging.info(f"Cluster images with projected points saved to {output_dir}")
+        # Save images with projected points for each cluster
+        output_dir = "clusters_with_projections"
+        save_projected_images_by_cluster(
+            clusters,
+            ims,
+            image_data_list_filtered,
+            points3D,
+            model_colors,
+            point_ids,
+            tracks,
+            K,
+            tracks_for_image,
+            output_dir
+        )
+        logging.info(f"Cluster images with projected points saved to {output_dir}")
