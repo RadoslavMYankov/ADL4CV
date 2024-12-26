@@ -1,0 +1,13 @@
+diff --git a/nerfstudio/models/base_model.py b/nerfstudio/models/base_model.py
+index febd4ab1..89d0b03b 100644
+--- a/nerfstudio/models/base_model.py
++++ b/nerfstudio/models/base_model.py
+@@ -217,7 +217,7 @@ class Model(nn.Module):
+         if accumulation_name not in outputs:
+             raise NotImplementedError(f"get_rgba_image is not implemented for model {self.__class__.__name__}")
+         rgb = outputs[output_name]
+-        if self.renderer_rgb.background_color == "random":  # type: ignore
++        if self.renderer_rgb.background_color in ("random", "last_sample"):  # type: ignore
+             acc = outputs[accumulation_name]
+             if acc.dim() < rgb.dim():
+                 acc = acc.unsqueeze(-1)
