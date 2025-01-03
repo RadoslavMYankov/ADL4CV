@@ -12,6 +12,7 @@ import pycolmap
 import tqdm
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
+import json
 
 
 def init_worker(global_data):
@@ -101,6 +102,7 @@ def project_to_img(image_data):
             'width': width
         }
     except Exception as e:
+        #print("Projection error fix here")
         print(f"Error processing image {image_name}: {e}")
         return None
 
@@ -162,6 +164,7 @@ def process_image(image_data):
         height = result['height']
         width = result['width']
         density_threshold = image_data['density_threshold']
+        #print("Results extracted")
 
         # Generate the density map for the projected points
         smoothed_density_map = density_map(points2D, (height, width), sigma=10)
@@ -171,7 +174,9 @@ def process_image(image_data):
 
         # Export the density map as a mask
         if 'mask_path' in image_data:
+            #print("ADD MASK PATH")
             mask_prefix = image_data['mask_path']
+            #print(mask_prefix)
             # If the folder does not exist, create it
             os.makedirs(mask_prefix, exist_ok=True)
             mask_path = f"{mask_prefix}/{image_data['image_name']}"
@@ -190,6 +195,7 @@ def process_image(image_data):
             "fraction_high_density_area": fraction_high_density
         }
     except Exception as e:
+        #print("Error processing image fix here")
         print(f"Error processing image {image_data['image_name']}: {e}")
         return {
             "image_id": image_data['image_id'],
@@ -603,6 +609,7 @@ def project_to_img_local(image_data, points3D, model_colors, point_ids, tracks, 
             'width': width
         }
     except Exception as e:
+        #print("Local projection error fix here")
         print(f"Error processing image {image_name}: {e}")
         return None
 
