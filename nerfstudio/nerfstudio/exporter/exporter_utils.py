@@ -124,15 +124,15 @@ def generate_point_cloud(
         task = progress_bar.add_task("Generating Point Cloud", total=num_points)
         while not progress_bar.finished:
             normal = None
-            print("check here 1")
+            #print("check here 1")
             with torch.no_grad():
-                print("check here 2")
+                #print("check here 2")
                 #print(pipeline.datamanager)
-                print("sampling rays")
-                print("rays:", pipeline.datamanager.next_train(0))
+                #print("sampling rays")
+                #print("rays:", pipeline.datamanager.next_train(0))
                 ray_bundle, _ = pipeline.datamanager.next_train(0)
                 assert isinstance(ray_bundle, RayBundle)
-                print("check here 2a: ray_bundle")
+                #print("check here 2a: ray_bundle")
                 outputs = pipeline.model(ray_bundle)
             if rgb_output_name not in outputs:
                 CONSOLE.rule("Error", style="red")
@@ -145,9 +145,9 @@ def generate_point_cloud(
                 CONSOLE.print(f"Please set --depth_output_name to one of: {outputs.keys()}", justify="center")
                 sys.exit(1)
             rgba = pipeline.model.get_rgba_image(outputs, rgb_output_name)
-            print("check here 3")
+            #print("check here 3")
             depth = outputs[depth_output_name]
-            print("check here 4")
+            #print("check here 4")
             if normal_output_name is not None:
                 if normal_output_name not in outputs:
                     CONSOLE.rule("Error", style="red")

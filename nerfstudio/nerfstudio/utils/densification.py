@@ -352,6 +352,10 @@ class NeRFStrategy(Strategy):
             densification_pipeline.datamanager.train_pixel_sampler.num_rays_per_batch = exporter.num_rays_per_batch
             print(f"adding {n_dupli} new points to the scene")
 
+            #change the seed for the datamanager so that the new points are not the same as the old ones
+            torch.manual_seed(torch.randint(0, 10000, (1,)).item())
+
+
             pcd = generate_point_cloud(
             pipeline=densification_pipeline,
             num_points=n_dupli, #maybe change later
