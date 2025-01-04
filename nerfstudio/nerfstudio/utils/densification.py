@@ -7,7 +7,7 @@ import open3d as o3d
 from pathlib import Path
 
 from gsplat.strategy.base import Strategy
-from gsplat.strategy.ops import duplicate, remove, reset_opa, split
+from gsplat.strategy.ops import duplicate, remove, reset_opa, split, _update_param_with_optimizer
 from typing_extensions import Literal
 from copy import deepcopy
 
@@ -22,6 +22,26 @@ def nerf_cs_to_colmap(nerf_pcd):
 
     nerf_pcd.transform(applied_transform)
     return nerf_pcd
+
+def k_nearest_sklearn(x: torch.Tensor, k: int):
+        """
+            Find k-nearest neighbors using sklearn's NearestNeighbors.
+        x: The data tensor of shape [num_samples, num_features]
+        k: The number of neighbors to retrieve
+        """
+        # Convert tensor to numpy array
+        x_np = x.cpu().numpy()
+
+        # Build the nearest neighbors model
+        from sklearn.neighbors import NearestNeighbors
+
+        nn_model = NearestNeighbors(n_neighbors=k + 1, algorithm="auto", metric="euclidean").fit(x_np)
+
+        # Find the k-nearest neighbors
+        distances, indices = nn_model.kneighbors(x_np)
+
+        # Exclude the point itself from the result and return
+        return distances[:, 1:].astype(np.float32), indices[:, 1:].astype(np.float32)
 
 @dataclass
 class NeRFStrategy(Strategy):
@@ -303,6 +323,7 @@ class NeRFStrategy(Strategy):
 
         # first duplicate
         if n_dupli > 0:
+            n_dupli = 100000
             #duplicate(params=params, optimizers=optimizers, state=state, mask=is_dupli)
             # here we proceed with our custom implementation - densification with Nerfs
             """we propose a pipeline as follows: 
@@ -318,7 +339,7 @@ class NeRFStrategy(Strategy):
             from nerfstudio.models.splatfacto import random_quat_tensor, num_sh_bases, RGB2SH
             from nerfstudio.data.datamanagers.parallel_datamanager import ParallelDataManager
 
-            nerf_config = Path("/home/team5/project/outputs/alameda/nerfacto/nerf_50k/config.yml")
+            nerf_config = Path("/home/team5/project/outputs/alameda/nerfacto/global_nerf/config.yml")
             exporter = ExportPointCloud(load_config=nerf_config, output_dir=None)
             _, densification_pipeline, _, _ = eval_setup(exporter.load_config)
 
@@ -326,12 +347,14 @@ class NeRFStrategy(Strategy):
 
             assert isinstance(densification_pipeline.datamanager, (ParallelDataManager))
             assert densification_pipeline.datamanager.train_pixel_sampler is not None
-            print(densification_pipeline.datamanager.train_pixel_sampler.num_rays_per_batch, exporter.num_rays_per_batch)
+            
+            # set the number of rays per batch to the number of rays per batch in the exporter
             densification_pipeline.datamanager.train_pixel_sampler.num_rays_per_batch = exporter.num_rays_per_batch
+            print(f"adding {n_dupli} new points to the scene")
 
             pcd = generate_point_cloud(
             pipeline=densification_pipeline,
-            num_points=250000, # now manual maybe change later
+            num_points=n_dupli, #maybe change later
             remove_outliers=exporter.remove_outliers,
             reorient_normals=exporter.reorient_normals,
             estimate_normals=False,
@@ -354,12 +377,18 @@ class NeRFStrategy(Strategy):
 
             # 2. Convert the sampled points to Gaussians and add them to the scene
 
-            # Convert to Splatfacto Coordinates
+            # Convert to Splatfacto Coordinates and extract coordinates and colors
             pcd = nerf_cs_to_colmap(pcd)
+
+            # Ensure points and colors are tensors
+            points_tensor = torch.Tensor(np.asarray(pcd.points))
+            colors_tensor = torch.Tensor(np.asarray(pcd.colors))
+            pcd = (points_tensor, colors_tensor)
 
             # Convert to Gaussians
             means = torch.nn.Parameter(pcd[0])
-            distances, _ = self.k_nearest_sklearn(means.data, 3) # we can increase the number of neighbors here
+            
+            distances, _ = k_nearest_sklearn(means.data, 3) # we can increase the number of neighbors here
             distances = torch.from_numpy(distances)
             # find the average of the three nearest neighbors for each point and use that as the scale
             avg_dist = distances.mean(dim=-1, keepdim=True)
@@ -369,8 +398,8 @@ class NeRFStrategy(Strategy):
             dim_sh =num_sh_bases(3)
 
             if pcd[1].shape[0] > 0:
-                shs = torch.zeros((self.seed_points[1].shape[0], dim_sh, 3)).float().cuda()
-                shs[:, 0, :3] = RGB2SH(self.seed_points[1] / 255)
+                shs = torch.zeros((pcd[1].shape[0], dim_sh, 3)).float().cuda()
+                shs[:, 0, :3] = RGB2SH(pcd[1] / 255)
                 shs[:, 1:, 3:] = 0.0
                 features_dc = torch.nn.Parameter(shs[:, 0, :])
                 features_rest = torch.nn.Parameter(shs[:, 1:, :])
@@ -379,6 +408,8 @@ class NeRFStrategy(Strategy):
                 features_rest = torch.nn.Parameter(torch.zeros((num_points, dim_sh - 1, 3)))
             
             opacities = torch.nn.Parameter(torch.logit(0.1 * torch.ones(num_points, 1)))
+            print("opacities:")
+            print(torch.isfinite(opacities).all())  # Should print True
             new_gauss_params = torch.nn.ParameterDict(
                 {
                     "means": means,
@@ -390,13 +421,28 @@ class NeRFStrategy(Strategy):
                 }
             )
 
-            # add the new gaussians to the scene
-            params["means"] = torch.cat([params["means"], new_gauss_params["means"]])
-            params["scales"] = torch.cat([params["scales"], new_gauss_params["scales"]])
-            params["quats"] = torch.cat([params["quats"], new_gauss_params["quats"]])
-            params["features_dc"] = torch.cat([params["features_dc"], new_gauss_params["features_dc"]])
-            params["features_rest"] = torch.cat([params["features_rest"], new_gauss_params["features_rest"]])
-            params["opacities"] = torch.cat([params["opacities"], new_gauss_params["opacities"]])
+            # load new gaussians to the device
+            for key, value in new_gauss_params.items():
+                new_gauss_params[key] = value.to(device)
+
+            print("check device:")
+            print(new_gauss_params["opacities"].device, params["opacities"].device)
+
+            # update the parameters
+            def param_fn(name: str, p: torch.Tensor) -> torch.Tensor:
+                new_p = new_gauss_params[name]
+                return torch.nn.Parameter(torch.cat([p, new_p]))
+
+            def optimizer_fn(key: str, v: torch.Tensor) -> torch.Tensor:
+                return torch.cat([v, torch.zeros((num_points, *v.shape[1:]), device=device)])
+
+            # update the parameters and the state in the optimizers
+            _update_param_with_optimizer(param_fn, optimizer_fn, params, optimizers)
+
+            # update the extra running state
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = torch.cat((v, torch.zeros_like(v[:num_points])))
             
             print("Densification with NeRF complete!")
                 
@@ -427,7 +473,13 @@ class NeRFStrategy(Strategy):
         state: Dict[str, Any],
         step: int,
     ) -> int:
+        # Debug: Print the values of params["opacities"]
+        print("params['opacities']:", params["opacities"])
+        print("params['opacities'].flatten():", params["opacities"].flatten())
+        print("torch.sigmoid(params['opacities'].flatten()):", torch.sigmoid(params["opacities"].flatten()))
+        print("self.prune_opa:", self.prune_opa)
         is_prune = torch.sigmoid(params["opacities"].flatten()) < self.prune_opa
+
         if step > self.reset_every:
             is_too_big = (
                 torch.exp(params["scales"]).max(dim=-1).values

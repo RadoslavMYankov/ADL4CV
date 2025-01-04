@@ -26,7 +26,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 import numpy as np
 import torch
 from gsplat.strategy import DefaultStrategy
-#from densification import NeRFStrategy
+from nerfstudio.utils.densification import NeRFStrategy
 
 try:
     from gsplat.rendering import rasterization
@@ -314,7 +314,7 @@ class SplatfactoModel(Model):
 
         # Strategy for GS densification
         # Check if we need to adjust the strategy parameters here
-        self.strategy = DefaultStrategy(
+        self.strategy = NeRFStrategy(
             prune_opa=self.config.cull_alpha_thresh,
             grow_grad2d=self.config.densify_grad_thresh,
             grow_scale3d=self.config.densify_size_thresh,

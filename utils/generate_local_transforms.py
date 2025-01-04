@@ -20,18 +20,18 @@ def read_images(images_path):
     return image_names
 
 if __name__ == "__main__":
-    #clusters = [str(i) for i in range(1, 6)]
-    clusters = ["42"]	
+    clusters = [str(i) for i in range(1, 6)]
+    #clusters = ["42"]	
     images_path = "/home/team5/project/data/alameda/images"
     images_names = sorted(read_images(images_path))
 
     clusters_dict = {}
-    '''clusters_dict['1'] = images_names[200:250]
-    clusters_dict['2'] = images_names[1050:1100]
-    clusters_dict['3'] = images_names[1530:1580]
-    clusters_dict['4'] = images_names[1380:1430]
-    clusters_dict['5'] = images_names[400:450]'''
-    clusters_dict['42'] = images_names[:1500]
+    clusters_dict['1'] = images_names[:364]
+    clusters_dict['2'] = images_names[545:589]
+    clusters_dict['3'] = images_names[624:864]
+    clusters_dict['4'] = images_names[893:1105]
+    clusters_dict['5'] = images_names[1530:1613]
+    #clusters_dict['42'] = images_names[:1500]
 
     # Load transforms.json
     with open("/home/team5/project/data/alameda/transforms.json", "r") as f:

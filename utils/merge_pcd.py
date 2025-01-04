@@ -42,10 +42,10 @@ def merge_pcs(path_to_local_nerfs, path_to_sfm):
 
 
 if __name__ == '__main__':
-    path_to_local_nerfs = '/home/team5/project/nerf_cluster_0_manual.ply'
+    path_to_local_nerfs = '/home/team5/project/point_cloud.ply'
     #path_to_local_nerfs = '/home/team5/project/outputs/alameda/nerfacto/global_nerf/point_cloud.ply'
     path_to_sfm = '/home/team5/project/data/alameda/sparse_pc.ply'
     merged_pcd = merge_pcs(path_to_local_nerfs, path_to_sfm)
-    output_ply_file_path = "nerf_sfm_cluster_0_manual.ply"
+    output_ply_file_path = "nerf_sfm_init.ply"
     o3d.io.write_point_cloud(output_ply_file_path, merged_pcd)
     print("Point cloud saved to", output_ply_file_path)
