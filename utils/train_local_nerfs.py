@@ -153,7 +153,7 @@ def main():
         with open(cluster_transforms_path, 'w') as f:
             json.dump(cluster_transforms, f, indent=4)
 
-        logging.info(f"Saved transforms for cluster {cluster_id}.")
+        logging.info(f"Saved transforms for cluster {cluster_id}. ({len(cluster_frames)} frames)")
 
         for max_iterations in args.max_num_iterations:
             # Train local NeRF for the cluster
