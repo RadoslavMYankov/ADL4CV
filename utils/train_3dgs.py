@@ -152,6 +152,7 @@ def main():
             logging.info(f"Training 3DGS with {initialization_name} initialization for {max_num_iterations} iterations")
             train_command = (
                 f"ns-train splatfacto --data {os.path.join(args.output, 'initializations', f'{initialization_name}_transforms.json')} "
+                f"--pipeline.model.cull-alpha-tresh 0.005 "
                 f"--timestamp {initialization_name}_{max_num_iterations}3dgsits --project-name {args.project_name} "
                 f"--output-dir {args.output} "
                 f"--vis tensorboard --max-num-iterations {max_num_iterations} "
@@ -171,18 +172,10 @@ def main():
 
 
     # Save the metrics
-    metrics_df = pd.DataFrame({
-        "initialization": list(merging_times.keys()) + list(training_times.keys()),
-        "merging_time": list(merging_times.values()) + [0] * len(training_times),
-        **{
-            f"training_time_{max_num_iterations}3dgsits": [
-                training_times[initialization].get(max_num_iterations, 0)
-                for initialization in training_times
-            ]
-            for max_num_iterations in args.max_num_iterations
-        }
-    })
-    metrics_df.to_csv(os.path.join(args.output, "3dgs_training_metrics.csv"))
+    training_times_df = pd.DataFrame(training_times)
+    training_times_df.to_csv(os.path.join(args.output, "training_times.csv"), index_label="iterations")
+    merging_times_df = pd.DataFrame(merging_times, index=[0])
+    merging_times_df.to_csv(os.path.join(args.output, "merging_times.csv"), index=False)
 
 if __name__ == "__main__":
     main()
