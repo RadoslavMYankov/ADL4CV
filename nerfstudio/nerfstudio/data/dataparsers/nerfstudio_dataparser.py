@@ -330,14 +330,14 @@ class Nerfstudio(DataParser):
         # - applied_transform contains the transformation to saved coordinates from original data coordinates.
         applied_transform = None
         colmap_path = self.config.data / "colmap/sparse/0"
-        print("debug start")
+        #print("debug start")
         if "applied_transform" in meta:
             applied_transform = torch.tensor(meta["applied_transform"], dtype=transform_matrix.dtype)
         elif colmap_path.exists():
             # For converting from colmap, this was the effective value of applied_transform that was being
             # used before we added the applied_transform field to the output dataformat.
             meta["applied_transform"] = [[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0]]
-            print("debug if")
+            #print("debug if")
             applied_transform = torch.tensor(meta["applied_transform"], dtype=transform_matrix.dtype)
 
         if applied_transform is not None:

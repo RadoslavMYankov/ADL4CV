@@ -127,6 +127,7 @@ class NeRFStrategy(Strategy):
     revised_opacity: bool = False
     verbose: bool = False
     key_for_gradient: Literal["means2d", "gradient_2dgs"] = "means2d"
+    num_clusters: int = 5
 
     def initialize_state(self, scene_scale: float = 1.0) -> Dict[str, Any]:
         """Initialize and return the running state for this strategy.
@@ -323,7 +324,7 @@ class NeRFStrategy(Strategy):
 
         # first duplicate
         if n_dupli > 0:
-            n_dupli = 100000
+            #n_dupli = 100000
             #duplicate(params=params, optimizers=optimizers, state=state, mask=is_dupli)
             # here we proceed with our custom implementation - densification with Nerfs
             """we propose a pipeline as follows: 
@@ -339,122 +340,125 @@ class NeRFStrategy(Strategy):
             from nerfstudio.models.splatfacto import random_quat_tensor, num_sh_bases, RGB2SH
             from nerfstudio.data.datamanagers.parallel_datamanager import ParallelDataManager
 
-            nerf_config = Path("/home/team5/project/outputs/alameda/nerfacto/global_nerf/config.yml")
-            exporter = ExportPointCloud(load_config=nerf_config, output_dir=None)
-            _, densification_pipeline, _, _ = eval_setup(exporter.load_config)
 
-            validate_pipeline(exporter.normal_method, exporter.normal_output_name, densification_pipeline)
+            for i in range(1, self.num_clusters+1):
+                nerf_config = Path(f"/home/team5/project/outputs/alameda/nerfacto/local_nerf_{i}/config.yml") #/home/team5/project/outputs/alameda/nerfacto/local_nerf_1/config.yml
+                print(f"Loading NeRF config from {nerf_config}")
+                exporter = ExportPointCloud(load_config=nerf_config, output_dir=None)
+                _, densification_pipeline, _, _ = eval_setup(exporter.load_config)
 
-            assert isinstance(densification_pipeline.datamanager, (ParallelDataManager))
-            assert densification_pipeline.datamanager.train_pixel_sampler is not None
-            
-            # set the number of rays per batch to the number of rays per batch in the exporter
-            densification_pipeline.datamanager.train_pixel_sampler.num_rays_per_batch = exporter.num_rays_per_batch
-            print(f"adding {n_dupli} new points to the scene")
+                validate_pipeline(exporter.normal_method, exporter.normal_output_name, densification_pipeline)
 
-            #change the seed for the datamanager so that the new points are not the same as the old ones
-            torch.manual_seed(torch.randint(0, 10000, (1,)).item())
+                assert isinstance(densification_pipeline.datamanager, (ParallelDataManager))
+                assert densification_pipeline.datamanager.train_pixel_sampler is not None
+                
+                # set the number of rays per batch to the number of rays per batch in the exporter
+                densification_pipeline.datamanager.train_pixel_sampler.num_rays_per_batch = exporter.num_rays_per_batch
+                print(f"adding {n_dupli} new points to the scene")
+
+                #change the seed for the datamanager so that the new points are not the same as the old ones
+                torch.manual_seed(torch.randint(0, 10000, (1,)).item())
 
 
-            pcd = generate_point_cloud(
-            pipeline=densification_pipeline,
-            num_points=n_dupli, #maybe change later
-            remove_outliers=exporter.remove_outliers,
-            reorient_normals=exporter.reorient_normals,
-            estimate_normals=False,
-            rgb_output_name=exporter.rgb_output_name,
-            depth_output_name=exporter.depth_output_name,
-            normal_output_name=exporter.normal_output_name if exporter.normal_method == "model_output" else None,
-            crop_obb=None,
-            std_ratio=exporter.std_ratio,
-            )
+                pcd = generate_point_cloud(
+                pipeline=densification_pipeline,
+                num_points=n_dupli, #maybe change later
+                remove_outliers=exporter.remove_outliers,
+                reorient_normals=exporter.reorient_normals,
+                estimate_normals=False,
+                rgb_output_name=exporter.rgb_output_name,
+                depth_output_name=exporter.depth_output_name,
+                normal_output_name=exporter.normal_output_name if exporter.normal_method == "model_output" else None,
+                crop_obb=None,
+                std_ratio=exporter.std_ratio,
+                )
 
-            # apply the inverse dataparser transform to the point cloud
-            points = np.asarray(pcd.points)
-            poses = np.eye(4, dtype=np.float32)[None, ...].repeat(points.shape[0], axis=0)[:, :3, :]
-            poses[:, :3, 3] = points
-            poses = densification_pipeline.datamanager.train_dataparser_outputs.transform_poses_to_original_space(
-                torch.from_numpy(poses)
-            )
-            points = poses[:, :3, 3].numpy()
-            pcd.points = o3d.utility.Vector3dVector(points)
+                # apply the inverse dataparser transform to the point cloud
+                points = np.asarray(pcd.points)
+                poses = np.eye(4, dtype=np.float32)[None, ...].repeat(points.shape[0], axis=0)[:, :3, :]
+                poses[:, :3, 3] = points
+                poses = densification_pipeline.datamanager.train_dataparser_outputs.transform_poses_to_original_space(
+                    torch.from_numpy(poses)
+                )
+                points = poses[:, :3, 3].numpy()
+                pcd.points = o3d.utility.Vector3dVector(points)
 
-            # 2. Convert the sampled points to Gaussians and add them to the scene
+                # 2. Convert the sampled points to Gaussians and add them to the scene
 
-            # Convert to Splatfacto Coordinates and extract coordinates and colors
-            pcd = nerf_cs_to_colmap(pcd)
+                # Convert to Splatfacto Coordinates and extract coordinates and colors
+                pcd = nerf_cs_to_colmap(pcd)
 
-            # Ensure points and colors are tensors
-            points_tensor = torch.Tensor(np.asarray(pcd.points))
-            colors_tensor = torch.Tensor(np.asarray(pcd.colors))
-            pcd = (points_tensor, colors_tensor)
+                # Ensure points and colors are tensors
+                points_tensor = torch.Tensor(np.asarray(pcd.points))
+                colors_tensor = torch.Tensor(np.asarray(pcd.colors))
+                pcd = (points_tensor, colors_tensor)
 
-            # Convert to Gaussians
-            means = torch.nn.Parameter(pcd[0])
-            
-            distances, _ = k_nearest_sklearn(means.data, 3) # we can increase the number of neighbors here
-            distances = torch.from_numpy(distances)
-            # find the average of the three nearest neighbors for each point and use that as the scale
-            avg_dist = distances.mean(dim=-1, keepdim=True)
-            scales = torch.nn.Parameter(torch.log(avg_dist.repeat(1, 3)))
-            num_points = means.shape[0]
-            quats = torch.nn.Parameter(random_quat_tensor(num_points))
-            dim_sh =num_sh_bases(3)
+                # Convert to Gaussians
+                means = torch.nn.Parameter(pcd[0])
+                
+                distances, _ = k_nearest_sklearn(means.data, 3) # we can increase the number of neighbors here
+                distances = torch.from_numpy(distances)
+                # find the average of the three nearest neighbors for each point and use that as the scale
+                avg_dist = distances.mean(dim=-1, keepdim=True)
+                scales = torch.nn.Parameter(torch.log(avg_dist.repeat(1, 3)))
+                num_points = means.shape[0]
+                quats = torch.nn.Parameter(random_quat_tensor(num_points))
+                dim_sh =num_sh_bases(3)
 
-            if pcd[1].shape[0] > 0:
-                shs = torch.zeros((pcd[1].shape[0], dim_sh, 3)).float().cuda()
-                shs[:, 0, :3] = RGB2SH(pcd[1] / 255)
-                shs[:, 1:, 3:] = 0.0
-                features_dc = torch.nn.Parameter(shs[:, 0, :])
-                features_rest = torch.nn.Parameter(shs[:, 1:, :])
-            else:
-                features_dc = torch.nn.Parameter(torch.rand(num_points, 3))
-                features_rest = torch.nn.Parameter(torch.zeros((num_points, dim_sh - 1, 3)))
-            
-            opacities = torch.nn.Parameter(torch.logit(0.1 * torch.ones(num_points, 1)))
-            print("opacities:")
-            print(torch.isfinite(opacities).all())  # Should print True
-            new_gauss_params = torch.nn.ParameterDict(
-                {
-                    "means": means,
-                    "scales": scales,
-                    "quats": quats,
-                    "features_dc": features_dc,
-                    "features_rest": features_rest,
-                    "opacities": opacities,
-                }
-            )
+                if pcd[1].shape[0] > 0:
+                    shs = torch.zeros((pcd[1].shape[0], dim_sh, 3)).float().cuda()
+                    shs[:, 0, :3] = RGB2SH(pcd[1] / 255)
+                    shs[:, 1:, 3:] = 0.0
+                    features_dc = torch.nn.Parameter(shs[:, 0, :])
+                    features_rest = torch.nn.Parameter(shs[:, 1:, :])
+                else:
+                    features_dc = torch.nn.Parameter(torch.rand(num_points, 3))
+                    features_rest = torch.nn.Parameter(torch.zeros((num_points, dim_sh - 1, 3)))
+                
+                opacities = torch.nn.Parameter(torch.logit(0.1 * torch.ones(num_points, 1)))
+                print("opacities:")
+                print(torch.isfinite(opacities).all())  # Should print True
+                new_gauss_params = torch.nn.ParameterDict(
+                    {
+                        "means": means,
+                        "scales": scales,
+                        "quats": quats,
+                        "features_dc": features_dc,
+                        "features_rest": features_rest,
+                        "opacities": opacities,
+                    }
+                )
 
-            # load new gaussians to the device
-            for key, value in new_gauss_params.items():
-                new_gauss_params[key] = value.to(device)
+                # load new gaussians to the device
+                for key, value in new_gauss_params.items():
+                    new_gauss_params[key] = value.to(device)
 
-            print("check device:")
-            print(new_gauss_params["opacities"].device, params["opacities"].device)
+                print("check device:")
+                print(new_gauss_params["opacities"].device, params["opacities"].device)
 
-            # update the parameters
-            def param_fn(name: str, p: torch.Tensor) -> torch.Tensor:
-                new_p = new_gauss_params[name]
-                return torch.nn.Parameter(torch.cat([p, new_p]))
+                # update the parameters
+                def param_fn(name: str, p: torch.Tensor) -> torch.Tensor:
+                    new_p = new_gauss_params[name]
+                    return torch.nn.Parameter(torch.cat([p, new_p]))
 
-            def optimizer_fn(key: str, v: torch.Tensor) -> torch.Tensor:
-                return torch.cat([v, torch.zeros((num_points, *v.shape[1:]), device=device)])
+                def optimizer_fn(key: str, v: torch.Tensor) -> torch.Tensor:
+                    return torch.cat([v, torch.zeros((num_points, *v.shape[1:]), device=device)])
 
-            # update the parameters and the state in the optimizers
-            _update_param_with_optimizer(param_fn, optimizer_fn, params, optimizers)
+                # update the parameters and the state in the optimizers
+                _update_param_with_optimizer(param_fn, optimizer_fn, params, optimizers)
 
-            # update the extra running state
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = torch.cat((v, torch.zeros_like(v[:num_points])))
-            
+                # update the extra running state
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = torch.cat((v, torch.zeros_like(v[:num_points])))
+                
             print("Densification with NeRF complete!")
                 
         # new GSs added by duplication will not be split
         is_split = torch.cat(
             [
                 is_split,
-                torch.zeros(n_dupli, dtype=torch.bool, device=device),
+                torch.zeros(self.num_clusters*n_dupli, dtype=torch.bool, device=device),
             ]
         )
 

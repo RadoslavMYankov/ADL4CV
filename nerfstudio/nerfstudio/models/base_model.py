@@ -217,7 +217,7 @@ class Model(nn.Module):
         if accumulation_name not in outputs:
             raise NotImplementedError(f"get_rgba_image is not implemented for model {self.__class__.__name__}")
         rgb = outputs[output_name]
-        if self.renderer_rgb.background_color in ["random", "last_sample"]:  # type: ignore
+        if self.renderer_rgb.background_color in ["random", "last_sample", "white"]:  # type: ignore
             print("Accumulation estimation")
             acc = outputs[accumulation_name]
             if acc.dim() < rgb.dim():

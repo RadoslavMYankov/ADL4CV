@@ -98,16 +98,16 @@ class DataProcessor(mp.Process):  # type: ignore
     def run(self):
         """Append out queue in parallel with ray bundles and batches."""
         self.cache_images()
-        print("cached images")
+        #print("cached images")
         while True:
-            print("while")
+            #print("while")
             batch = self.pixel_sampler.sample(self.img_data)
-            print("batch")
+            #print("batch")
             ray_indices = batch["indices"]
             ray_bundle: RayBundle = self.ray_generator(ray_indices)
             # check that GPUs are available
             if torch.cuda.is_available():
-                print("cuda")
+                #print("cuda")
                 ray_bundle = ray_bundle.pin_memory()
             while True:
                 try:
@@ -246,7 +246,7 @@ class ParallelDataManager(DataManager, Generic[TDataset]):
         """Sets up parallel python data processes for training."""
         assert self.train_dataset is not None
         self.train_pixel_sampler = self._get_pixel_sampler(self.train_dataset, self.config.train_num_rays_per_batch)  # type: ignore
-        print("pixel sampler")
+        #print("pixel sampler")
         self.data_queue = mp.Queue(maxsize=self.config.queue_size)  # type: ignore
         self.data_procs = [
             DataProcessor(
@@ -258,10 +258,10 @@ class ParallelDataManager(DataManager, Generic[TDataset]):
             )
             for i in range(self.config.num_processes)
         ]
-        print(self.data_procs)
+        #print(self.data_procs)
         for proc in self.data_procs:
             proc.start()
-        print("Started threads")
+        #print("Started threads")
 
     def setup_eval(self):
         """Sets up the data loader for evaluation."""
@@ -295,13 +295,13 @@ class ParallelDataManager(DataManager, Generic[TDataset]):
     def next_train(self, step: int) -> Tuple[RayBundle, Dict]:
         """Returns the next batch of data from the parallel training processes."""
         self.train_count += 1
-        print("count")
-        print("Queue size:", self.data_queue.qsize())
-        print(self.data_queue) 
+        #print("count")
+        #print("Queue size:", self.data_queue.qsize())
+        #print(self.data_queue) 
         bundle, batch = self.data_queue.get()
-        print("got bundle")
+        #print("got bundle")
         ray_bundle = bundle.to(self.device)
-        print("to device")
+        #print("to device")
         return ray_bundle, batch
 
     def next_eval(self, step: int) -> Tuple[RayBundle, Dict]:
