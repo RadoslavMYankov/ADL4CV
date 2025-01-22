@@ -314,13 +314,31 @@ class NerfactoModel(Model):
             depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
         expected_depth = self.renderer_expected_depth(weights=weights, ray_samples=ray_samples)
         accumulation = self.renderer_accumulation(weights=weights)
+        zvals = 0.5 * (ray_samples.frustums.starts + ray_samples.frustums.ends).squeeze(-1)
+        cdf = torch.cumsum(weights, dim=-1).squeeze(-1)
+        weights = weights.squeeze(-1)
+        median_idx = (cdf >= 0.5).float().argmax(dim=-1)
+        '''print("zvals shape:", zvals.shape)
+        print("weights shape:", weights.shape)
+        print("cdf shape:", cdf.shape)
+        print("median_idx shape:", median_idx.shape)
+        print("median_idx unsqueezed shape:", median_idx.unsqueeze(-1).shape)'''
+
+        # Reduce zvals to one median depth per ray
+        median_depth = torch.gather(zvals, 1, median_idx.unsqueeze(-1)).squeeze(-1)  # shape [4096]
+        #print("median_depth shape: ", median_depth.shape)
+
 
         outputs = {
             "rgb": rgb,
             "accumulation": accumulation,
             "depth": depth,
             "expected_depth": expected_depth,
+            "median_depth": median_depth,
         }
+
+        weights = weights.unsqueeze(-1)
+        cdf = cdf.unsqueeze(-1)
 
         if self.config.predict_normals:
             normals = self.renderer_normals(normals=field_outputs[FieldHeadNames.NORMALS], weights=weights)

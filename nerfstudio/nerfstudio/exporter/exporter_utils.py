@@ -134,6 +134,7 @@ def generate_point_cloud(
                 assert isinstance(ray_bundle, RayBundle)
                 #print("check here 2a: ray_bundle")
                 outputs = pipeline.model(ray_bundle)
+                #print("outputs: ", outputs.keys())
             if rgb_output_name not in outputs:
                 CONSOLE.rule("Error", style="red")
                 CONSOLE.print(f"Could not find {rgb_output_name} in the model outputs", justify="center")
@@ -147,6 +148,10 @@ def generate_point_cloud(
             rgba = pipeline.model.get_rgba_image(outputs, rgb_output_name)
             #print("check here 3")
             depth = outputs[depth_output_name]
+            #median_depth = outputs["median_depth"]
+            '''print("ray_bundle.directions shape:", ray_bundle.directions.shape)
+            print("median_depth shape:", median_depth.shape)
+            print("median_depth after unsqueeze:", median_depth.unsqueeze(-1).shape)'''
             #print("check here 4")
             if normal_output_name is not None:
                 if normal_output_name not in outputs:
@@ -159,7 +164,7 @@ def generate_point_cloud(
                     torch.min(normal) >= 0.0 and torch.max(normal) <= 1.0
                 ), "Normal values from method output must be in [0, 1]"
                 normal = (normal * 2.0) - 1.0
-            point = ray_bundle.origins + ray_bundle.directions * depth
+            point = ray_bundle.origins + ray_bundle.directions * depth #median_depth.unsqueeze(-1)
             view_direction = ray_bundle.directions
 
             # Filter points with opacity lower than 0.5
