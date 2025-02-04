@@ -4,6 +4,8 @@ import argparse
 import merge_plys
 from train_local_nerfs import export_pointcloud
 
+# DEPRECATED
+
 def main():
     parser = argparse.ArgumentParser(
         description="Automate pc extraction and merging."

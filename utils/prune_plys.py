@@ -17,8 +17,22 @@ def nerf_cs_to_colmap(nerf_pcd):
 def merge_and_prune(sfm_input, nerf_inputs, num_points, output_path):
     sfm_pcd = o3d.io.read_point_cloud(sfm_input)
     num_sfm_points = len(sfm_pcd.points)
-    #print(num_sfm_points)
+    print(num_sfm_points)
     num_nerf_points = num_points - num_sfm_points
+    print(num_nerf_points)
+    
+    nerf_pcd = o3d.io.read_point_cloud(nerf_inputs)
+    nerf_pcd = downsample(nerf_pcd, num_nerf_points)
+    nerf_pcd = nerf_cs_to_colmap(nerf_pcd)
+    merged_pcd = sfm_pcd + nerf_pcd
+    o3d.io.write_point_cloud(output_path, merged_pcd)
+
+def merge_and_prune_mipnerf(sfm_input, nerf_inputs, num_points, output_path):
+    sfm_pcd = o3d.io.read_point_cloud(sfm_input)
+    num_sfm_points = len(sfm_pcd.points)
+    #print(num_sfm_points)
+    num_nerf_points = num_points
+    print(num_nerf_points)
     
     nerf_pcd = o3d.io.read_point_cloud(nerf_inputs)
     nerf_pcd = downsample(nerf_pcd, num_nerf_points)

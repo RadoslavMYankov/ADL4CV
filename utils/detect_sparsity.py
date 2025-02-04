@@ -709,7 +709,7 @@ if __name__ == '__main__':
         image_data_list.append(image_data)
     logging.info(f"Extracted {len(image_data_list)} images.")
 
-    if not os.path.exists("alameda_density_results.csv") or args.recompute:
+    if not os.path.exists("nyc_density_results.csv") or args.recompute:
         logging.info("Processing images to compute density statistics")
         # Package the global data into a tuple
         global_data = (points3D, model_colors, point_ids, tracks, K, tracks_for_image)
@@ -741,10 +741,10 @@ if __name__ == '__main__':
         print(df)
 
         # Save the DataFrame to a CSV file
-        df.to_csv("alameda_density_results.csv", index=False)
+        df.to_csv("nyc_density_results.csv", index=False)
     else:
         logging.info("Loading precomputed density statistics")
-        df = pd.read_csv("alameda_density_results.csv")
+        df = pd.read_csv("nyc_density_results.csv")
 
     logging.info(f"Start clustering {args.cluster_images} images based on {args.clustering_method}")
 
@@ -776,7 +776,7 @@ if __name__ == '__main__':
 
     if args.cluster_images == "sparse":
         # Save the cluster images
-        output_path = "alameda_cluster_images.png"
+        output_path = "nyc_cluster_images.png"
         save_cluster_images(clusters, ims, output_path, images_path=args.images_path)
         logging.info(f"Cluster images saved to {output_path}")
 

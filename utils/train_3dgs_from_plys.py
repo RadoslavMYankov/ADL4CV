@@ -103,11 +103,18 @@ def main():
             logging.info(f"Training 3DGS with {initialization_name} initialization for {max_num_iterations} iterations")
             train_command = (
                 f"ns-train splatfacto --data {os.path.join(args.data, f'{initialization_name}_transforms.json')} "
+                f"--steps-per-eval-all-images 300 "
+                f"--steps-per-eval-image 1 "
                 f"--pipeline.model.cull-alpha-thresh 0.005 "
                 f"--timestamp {initialization_name}_{max_num_iterations}_its --project-name {args.project_name} "
                 f"--output-dir {args.output} "
                 f"--vis tensorboard --max-num-iterations {max_num_iterations} "
                 f"--machine.num-devices 1 "
+                f"--pipeline.model.stop-split-at 20000 "
+                f"--pipeline.model.densify-grad-thresh 0.0008 "
+                f"--pipeline.model.warmup-length 1000 "
+                f"--pipeline.model.refine-every 100 "
+                #f"nerfstudio-data --eval-mode localized "
                 )
             start_time = time.time()
             try:

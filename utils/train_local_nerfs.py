@@ -122,11 +122,12 @@ def main():
     cluster_ids = cluster_ids[:args.max_clusters]
 
     for cluster_id in cluster_ids:
-        image_names = clusters[clusters['cluster_id'] == cluster_id]['image_name'].values
-        image_names_lower = [name.lower() for name in image_names]
-        cluster_dir = os.path.join(args.output, f"cluster_{cluster_id}")
+        #print(cluster_id)
+        #image_names = clusters[clusters['cluster_id'] == cluster_id]['image_name'].values
+        #image_names_lower = [name.lower() for name in image_names]
+        #cluster_dir = os.path.join(args.output, f"cluster_{cluster_id}")
 
-        cluster_frames = [
+        '''cluster_frames = [
             {
                 **frame,
                 "file_path": os.path.relpath(
@@ -144,21 +145,23 @@ def main():
 
         # Create cluster transforms.json
         cluster_transforms = transforms.copy()
-        cluster_transforms['frames'] = cluster_frames
+        cluster_transforms['frames'] = cluster_frames'''
 
-        if not os.path.exists(cluster_dir):
-            os.makedirs(cluster_dir)
+        '''if not os.path.exists(cluster_dir):
+            os.makedirs(cluster_dir)'''
 
-        cluster_transforms_path = os.path.join(cluster_dir, f'cluster_{cluster_id}_transforms.json')
+        '''cluster_transforms_path = os.path.join(cluster_dir, f'cluster_{cluster_id}_transforms.json')
         with open(cluster_transforms_path, 'w') as f:
             json.dump(cluster_transforms, f, indent=4)
 
         logging.info(f"Saved transforms for cluster {cluster_id}. ({len(cluster_frames)} frames)")
+        #print(cluster_transforms_path)'''
 
         for max_iterations in args.max_num_iterations:
             # Train local NeRF for the cluster
             ns_train_command = (
-                f"ns-train nerfacto --data {cluster_transforms_path} --output-dir {args.output} "
+                f"ns-train nerfacto --data {os.path.join(args.data, f'transforms_cluster_{cluster_id}.json')} "
+                f"--output-dir {args.output} "
                 f"--pipeline.model.predict-normals True "
                 f"--timestamp cluster_{cluster_id}_{max_iterations}its --project-name {args.project_name} "
                 f"--vis tensorboard --max-num-iterations {max_iterations} "
@@ -180,7 +183,7 @@ def main():
 
             if args.save_plys:
                 # Export point cloud from the trained model
-                model_path = os.path.join(cluster_dir, "nerfacto", f"cluster_{cluster_id}_{max_iterations}its")
+                model_path = os.path.join(args.output, "nyc", "nerfacto", f"cluster_{cluster_id}_{max_iterations}its")
                 start_time = time()
                 export_pointcloud(
                     os.path.join(model_path, "config.yml"),
@@ -191,7 +194,7 @@ def main():
                 # Copy the point cloud to the cluster directory
                 point_cloud_path = os.path.join(model_path, "point_cloud.ply")
                 if os.path.exists(point_cloud_path):
-                    ply_dir = os.path.join(args.output, "point_clouds")
+                    ply_dir = os.path.join(args.output, "point_clouds", f"{max_iterations}its")
                     if not os.path.exists(ply_dir):
                         os.makedirs(ply_dir)
                     ply_path = os.path.join(ply_dir, f"cluster_{cluster_id}_{max_iterations}its.ply")
@@ -201,7 +204,7 @@ def main():
                 export_duration = None
 
             # Store the time taken for training
-            with open(os.path.join(cluster_dir, f"cluster_{cluster_id}_{max_iterations}its_metrics.json"), 'w') as f:
+            with open(os.path.join(model_path, f"cluster_{cluster_id}_{max_iterations}its_metrics.json"), 'w') as f:
                 json.dump({
                     "training_duration": training_duration,
                     "export_duration": export_duration

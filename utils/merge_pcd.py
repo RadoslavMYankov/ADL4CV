@@ -37,15 +37,15 @@ def merge_pcs(path_to_local_nerfs, path_to_sfm):
 
     #merged_pcd = merged_pcd.rotate(rotation_matrix, center=(0, 0, 0))
 
-    #return nerf_pcd
-    return merged_pcd
+    return nerf_pcd
+    #return merged_pcd
 
 
 if __name__ == '__main__':
-    path_to_local_nerfs = '/home/team5/project/bicycle_nerf.ply'
+    path_to_local_nerfs = '/home/team5/project/data/bicycle/plys_100k/nerf_100k_init_2000iters.ply'
     #path_to_local_nerfs = '/home/team5/project/outputs/alameda/nerfacto/global_nerf/point_cloud.ply'
-    path_to_sfm = '/home/team5/project/data/alameda/sparse_pc.ply'
+    path_to_sfm = '/home/team5/project/data/bicycle/plys_100k/sparse_pc.ply'
     merged_pcd = merge_pcs(path_to_local_nerfs, path_to_sfm)
-    output_ply_file_path = "bicycle_combined.ply"
+    output_ply_file_path = "nerf_2k_iter_init_100k.ply"
     o3d.io.write_point_cloud(output_ply_file_path, merged_pcd)
     print("Point cloud saved to", output_ply_file_path)

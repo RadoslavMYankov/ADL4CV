@@ -67,6 +67,7 @@ def main():
     parser.add_argument(
         "--num_points",
         type=int,
+        nargs='+',
         default=50000,
         help="Number of points to export in the point cloud."
     )
@@ -82,14 +83,7 @@ def main():
         if os.path.join(args.data, scene).endswith(".json"):
             transforms_path = args.data
         else:
-            transforms_path = os.path.join(args.data, scene, "transforms.json")
-
-        # Load the transforms.json file containing all images of the original dataset
-        try:
-            with open(transforms_path, 'r') as f:
-                transforms = json.load(f)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"The input file does not exist: {transforms_path}")
+            transforms_path = os.path.join(args.data, scene, "transforms_merged_clusters.json")
 
         for max_iterations in args.max_num_iterations:
             # Train local NeRF for the cluster
@@ -115,29 +109,30 @@ def main():
 
 
             if args.save_plys:
-                # Export point cloud from the trained model
-                model_path = os.path.join(scene, "nerfacto", f"{scene}_{max_iterations}its")
-                start_time = time()
-                export_pointcloud(
-                    os.path.join(model_path, "config.yml"),
-                    model_path,
-                    num_points=args.num_points
-                )
-                export_duration = time() - start_time
-                # Copy the point cloud to the cluster directory
-                point_cloud_path = os.path.join(model_path, "point_cloud.ply")
-                if os.path.exists(point_cloud_path):
-                    ply_dir = os.path.join(args.output, "point_clouds")
-                    if not os.path.exists(ply_dir):
-                        os.makedirs(ply_dir)
-                    ply_path = os.path.join(ply_dir, f"{scene}_{max_iterations}its.ply")
-                    os.rename(point_cloud_path, ply_path)
-                logging.info(f"Point cloud exported from the trained model in {export_duration:.2f} seconds.")
+                for points in args.num_points:
+                    # Export point cloud from the trained model
+                    model_path = os.path.join(args.output, f"{scene}", "nerfacto", f"{scene}_{max_iterations}its")
+                    start_time = time()
+                    export_pointcloud(
+                        os.path.join(model_path, "config.yml"),
+                        model_path,
+                        num_points=points
+                    )
+                    export_duration = time() - start_time
+                    # Copy the point cloud to the cluster directory
+                    point_cloud_path = os.path.join(model_path, f"point_cloud.ply")
+                    if os.path.exists(point_cloud_path):
+                        ply_dir = os.path.join(args.output, "point_clouds")
+                        if not os.path.exists(ply_dir):
+                            os.makedirs(ply_dir)
+                        ply_path = os.path.join(ply_dir, f"{scene}_{max_iterations}its_{points}pts.ply")
+                        os.rename(point_cloud_path, ply_path)
+                    logging.info(f"Point cloud exported from the trained model in {export_duration:.2f} seconds.")
             else:
                 export_duration = None
 
             # Store the time taken for training
-            with open(os.path.join(scene, f"{scene}_{max_iterations}its_metrics.json"), 'w') as f:
+            with open(os.path.join(args.output, f"{scene}_{max_iterations}its_metrics.json"), 'w') as f:
                 json.dump({
                     "training_duration": training_duration,
                     "export_duration": export_duration
