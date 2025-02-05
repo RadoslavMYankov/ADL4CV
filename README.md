@@ -5,6 +5,18 @@
 This project aims to enhance 3D Gaussian Splatting (3DGS) by leveraging priors from pretrained Neural Radiance Fields (NeRFs).
 
 ## Getting Started
+### Prepare the data
+Unposed images - run COLMAP following the [nerfstudio guide](https://docs.nerf.studio/quickstart/custom_dataset.html)
+
+If the bin files with camera poses are available 
+run `prepare_data.py`
+
+```bash
+python detect_sparsity.py \
+    --input-path /data/sparse/0
+    --output-path /data/
+````
+
 
 ### Running the Sparsity Detection Script - Only Relevant for Local NeRF Pipeline
 
@@ -68,3 +80,36 @@ python train_local_nerfs.py \
  - Trains a NeRF model for each selected cluster using Nerfstudio.
 
  - Optionally exports point clouds as PLY files.
+
+### Merging Point Clouds
+
+`merge_local_plys.py` with arguments 
+nerf_inputs - containing the nerf point clouds
+sfm_input - path to the SfM pointcloud
+output_path
+
+### Traing 3DGS
+
+use `train_3dgs_final.py` 
+
+Example Usage:
+
+```bash
+python train_3dgs.py \
+    --project-name alameda-3dgs \
+    --data ../data/alameda/transforms.json \
+    --output ../output/3dgs_models \
+    --plys ../output/plys \
+    --max_num_iterations 30000
+```
+
+
+### Miscelaneous 
+
+the visualization tools can be found in `utils\visualizations_final`
+
+cleaning the NeRFs we use [Optimizing the Unseen](https://github.com/leosegre/Optimize-the-Unseen). Please refer to the paper and the documentation for further information.
+
+#### Contributors
+Radoslav Yankov
+Lucas Schnack
