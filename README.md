@@ -1,9 +1,18 @@
-Running the Sparsity Detection Script
+# Enhancing 3D Gaussian Splatting Optimization with NeRF Priors
 
-The first step in the pipeline is executing detect_sparsity.py, which analyzes the sparsity of images using COLMAP reconstruction.
+## Overview
 
-Example Usage
+This project aims to enhance the optimization of 3D Gaussian Splatting (3DGS) by leveraging priors from a pretrained Neural Radiance Field (NeRF).
 
+## Getting Started
+
+### Running the Sparsity Detection Script
+
+The first step in the pipeline is executing `detect_sparsity.py`, which analyzes the sparsity of images using COLMAP reconstruction.
+
+#### Example Usage
+
+```bash
 python detect_sparsity.py \
     --images_path ../data/alameda/images \
     --colmap_path ../data/alameda/colmap/sparse/0 \
@@ -16,15 +25,26 @@ python detect_sparsity.py \
     --cluster-images all \
     --cluster-output clusters.csv \
     --sparsity-threshold 0.15
+```
 
-Script Description
+### Script Description
 
-detect_sparsity.py identifies sparse regions in the SfM initialization to improve 3DGS initialization. It performs the following tasks:
+`detect_sparsity.py` identifies sparse regions in the SfM initialization to improve 3DGS initialization. It performs the following tasks:
 
-Loads COLMAP sparse reconstruction data to assess 3D point density.
+- Loads COLMAP sparse reconstruction data to assess 3D point density.
+- Computes density statistics for each image and identifies sparse regions.
+- Optionally clusters images using DBSCAN based on poses or shared 3D points.
+- Saves clustering results and sparsity masks for further processing.
 
-Computes density statistics for each image and identifies sparse regions.
+## Next Steps
 
-Optionally clusters images using DBSCAN based on poses or shared 3D points.
+After detecting sparsity, the identified dense regions can be used to initialize 3D Gaussian Splatting with a NeRF prior, ensuring a more informed and optimized initialization process.
 
-Saves clustering results and sparsity masks for further processing.
+## Contributions
+
+Feel free to contribute to this project by submitting pull requests or reporting issues.
+
+## License
+
+This project is licensed under the MIT License.
+
