@@ -101,20 +101,25 @@ def get_train_eval_split_all(image_filenames: List) -> Tuple[np.ndarray, np.ndar
     return i_train, i_eval
 
 
-def get_train_eval_split_localized(image_filenames: List, val_filenames: List) -> Tuple[np.ndarray, np.ndarray]:
+def get_train_eval_split_localized(image_filenames: List[str], val_filenames: List[str], train_split_fraction: float) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Get the train/eval split where all indices are used for both train and eval.
+    Get the train/eval split where train indices are based on the provided logic and eval indices are from val_filenames not in train indices.
 
     Args:
         image_filenames: list of image filenames
+        val_filenames: list of validation image filenames
+        train_split_fraction: fraction of images to use for training
     """
-    num_images = len(image_filenames)
-    num_train_images = math.ceil(num_images * 0.9)
-    i_train = np.linspace(
-        0, num_images - 1, num_train_images, dtype=int
-    )
+    # Get the train indices using the provided logic
+    i_train, _ = get_train_eval_split_fraction(image_filenames, train_split_fraction)
+
+    # Get the indices of the validation images
     i_eval = []
-    # get the indices of the validation images
     for val_filename in val_filenames:
-        i_eval.append(image_filenames.index(val_filename))
+        idx = image_filenames.index(val_filename)
+        if idx not in i_train:
+            i_eval.append(idx)
+
+    i_eval = np.array(i_eval, dtype=int)
+
     return i_train, i_eval

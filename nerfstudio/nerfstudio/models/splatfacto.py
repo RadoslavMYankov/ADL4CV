@@ -159,13 +159,13 @@ class SplatfactoModelConfig(ModelConfig):
     """Whether to randomize the background color."""
     num_downscales: int = 2
     """at the beginning, resolution is 1/2^d, where d is this number"""
-    cull_alpha_thresh: float = 0.1 # 0.1 originally
+    cull_alpha_thresh: float = 0.1
     """threshold of opacity for culling gaussians. One can set it to a lower value (e.g. 0.005) for higher quality."""
     cull_scale_thresh: float = 0.5
     """threshold of scale for culling huge gaussians"""
     reset_alpha_every: int = 30
     """Every this many refinement steps, reset the alpha"""
-    densify_grad_thresh: float = 0.0008 # 0.0008 originally this value is taken from RadSplat
+    densify_grad_thresh: float = 0.0008 
     """threshold of positional gradient norm for densifying gaussians"""
     use_absgrad: bool = True
     """Whether to use absgrad to densify gaussians, if False, will use grad rather than absgrad"""

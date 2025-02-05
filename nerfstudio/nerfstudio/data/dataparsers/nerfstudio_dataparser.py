@@ -214,13 +214,14 @@ class Nerfstudio(DataParser):
             elif self.config.eval_mode == "interval":
                 i_train, i_eval = get_train_eval_split_interval(image_filenames, self.config.eval_interval)
             elif self.config.eval_mode == "localized":
-                meta_val = load_from_json(self.config.data / "transforms_cluster_0_manual.json")
+                meta_val = load_from_json(data_dir / "transforms_merged_clusters.json")
                 fnames_val = []
-                for frame in meta_val["frames"]:
-                    filepath = Path(frame["file_path"])
-                    fname = self._get_fname(filepath, data_dir)
-                    fnames_val.append(fname)
-                i_train, i_eval = get_train_eval_split_localized(image_filenames, fnames_val)
+                for i, frame in enumerate(meta_val["frames"]):
+                    if i % 10 == 0:
+                        filepath = Path(frame["file_path"])
+                        fname = self._get_fname(filepath, data_dir)
+                        fnames_val.append(fname)
+                i_train, i_eval = get_train_eval_split_localized(image_filenames, fnames_val, self.config.train_split_fraction)
 
             elif self.config.eval_mode == "all":
                 CONSOLE.log(
