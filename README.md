@@ -2,11 +2,11 @@
 
 ## Overview
 
-This project aims to enhance the optimization of 3D Gaussian Splatting (3DGS) by leveraging priors from a pretrained Neural Radiance Field (NeRF).
+This project aims to enhance 3D Gaussian Splatting (3DGS) by leveraging priors from pretrained Neural Radiance Fields (NeRFs).
 
 ## Getting Started
 
-### Running the Sparsity Detection Script
+### Running the Sparsity Detection Script - Only Relevant for Local NeRF Pipeline
 
 The first step in the pipeline is executing `detect_sparsity.py`, which analyzes the sparsity of images using COLMAP reconstruction.
 
@@ -36,15 +36,35 @@ python detect_sparsity.py \
 - Optionally clusters images using DBSCAN based on poses or shared 3D points.
 - Saves clustering results and sparsity masks for further processing.
 
-## Next Steps
+### Create the Local Clusters
 
-After detecting sparsity, the identified dense regions can be used to initialize 3D Gaussian Splatting with a NeRF prior, ensuring a more informed and optimized initialization process.
+We use the generated clusters as guidance and manually select additional training images for the local clusters (we need to get enough training views for accurate depth estimation). Having selected the frames,
+we run `generate_clusters.py` which works on a sorted array of all frames and generates the training JSON files for the individual clusters.
 
-## Contributions
+### Training the NeRF Models (Applies to both Global and Local Pipelines) 
 
-Feel free to contribute to this project by submitting pull requests or reporting issues.
+Execute either  `train_local_nerfs.py` (local) or  `train_nerfs_mipnerf.py` (global nerfs). We also export the point clouds in this step.  
 
-## License
+Example usage: 
 
-This project is licensed under the MIT License.
+```bash
+python train_local_nerfs.py \
+    --project-name alameda-local-nerfs \
+    --data ../data/alameda/transforms.json \
+    --output ../output/local_nerfs \
+    --clusters ../output/clusters.csv \
+    --min_sparse_images 5 \
+    --max_clusters 5 \
+    --max_num_iterations 100000 \
+    --save_plys \
+    --num_points 50000
+```
+`train_local_nerfs.py` trains NeRF models on local clusters based on identified sparse/dense regions:
 
+ - Loads the dataset and image cluster information.
+
+ - Filters clusters based on the minimum number of sparse images. (not relevant for manual clusters)
+
+ - Trains a NeRF model for each selected cluster using Nerfstudio.
+
+ - Optionally exports point clouds as PLY files.
